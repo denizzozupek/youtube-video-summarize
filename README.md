@@ -1,5 +1,4 @@
 
-````markdown
 # 🎥 YouTube Video Summarizer (Powered by Gemini AI)
 
 A powerful Python tool that analyzes YouTube videos to generate structured, educational summaries using **Google Gemini 1.5 Flash**.
