@@ -1,7 +1,7 @@
 
-# 🎥 YouTube Video Summarizer (Powered by Gemini AI)
+# 🎥 YouTube Video Summarizer 
 
-A powerful Python tool that analyzes YouTube videos to generate structured, educational summaries using **Google Gemini 1.5 Flash**.
+A powerful Python tool that analyzes YouTube videos to generate structured, educational summaries using **Google Gemini**.
 
 This tool automatically retrieves video transcripts. If official captions are missing, it downloads the audio and transcribes it locally using **OpenAI Whisper** as a fallback. It then processes the text to extract key insights, learning points, and summaries.
 
