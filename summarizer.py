@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def summarize_text(text):
+def youtube_text_summarizer(youtube_video_text : str) -> str | None:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment variables")
@@ -41,13 +41,14 @@ def summarize_text(text):
     ....
     """
 
-    user_prompt = f"İşte video transkripti:\n\n{text[:100000]}"
+    user_prompt = f"Here is the video transcript:\n\n{youtube_video_text[:100000]}"
 
     try:
         full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
         response = model.generate_content(full_prompt)
         return response.text
+    
     except Exception as e:
-        print(f"Özetleme sırasında hata oluştu: {e}")
+        print(f"An error occurred during the summarization process: {e}")
         return None
