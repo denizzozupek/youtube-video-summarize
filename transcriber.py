@@ -20,12 +20,14 @@ def fetch_transcript_from_youtube_url(video_id: str):
         ytt_api = YouTubeTranscriptApi()
         transcript_list = ytt_api.list(video_id)
 
+        #first try to get manually created transcripts
         try:
             transcript = transcript_list.find_transcript(['tr', 'en'])
             return transcript
         except NoTranscriptFound:
             pass
 
+        #if no manually created transcripts, try to get generated ones
         try:
             transcript = transcript_list.find_generated_transcript(['tr', 'en'])
             return transcript       
@@ -52,6 +54,7 @@ def get_transcripted_text(youtube_url: str) -> str | None:
     if not transcript_obj:
         return None
     
+    # Format the transcript into plain text
     try:
         print("Fetching and formatting transcript...")
         transcripted_text = transcript_obj.fetch()
