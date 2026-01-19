@@ -1,8 +1,18 @@
+import traceback
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 from urllib.parse import urlparse, parse_qs
 
 def get_video_id_from_youtube_url(youtube_url: str) -> str | None:
+    """Extracts the video ID from a given YouTube URL.
+
+    Args:
+        youtube_url (str): The URL of the YouTube video.
+
+    Returns:
+        str | None: The extracted video ID (e.g., "6NQUbFiUYRw"), 
+                    or None if the URL is invalid.
+    """
     parsed_url = urlparse(youtube_url)
 
     if parsed_url.query:
@@ -15,41 +25,88 @@ def get_video_id_from_youtube_url(youtube_url: str) -> str | None:
         return parsed_url.path.lstrip("/")
     return None
 
-def fetch_transcript_from_youtube_url(video_id: str):
-    try:
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.list(video_id)
+class TranscriptFetch:
+    """A class to handle fetching transcripts (subtitles) from YouTube videos.
+    
+    It attempts to fetch manually created transcripts first. If not found, 
+    it falls back to auto-generated transcripts.
+    """
+    LANGUAGES = ['tr', 'en']
 
-        #first try to get manually created transcripts
+    def __init__(self, api=None):
+        """Initializes the TranscriptFetch instance.
+
+        Args:
+        api (optional): A mock API instance for testing purposes. 
+                        If None, the real YouTubeTranscriptApi is used.
+        """
+        self.ytt_api = api or YouTubeTranscriptApi()
+
+    def get_transcript_obj(self, video_id: str) -> list | None:
+        """Orchestrates the retrieval of a transcript object for a given video ID.
+
+        Args:
+            video_id (str): The YouTube video ID.
+
+        Returns:
+            Transcript | None: The found transcript object, or None if not found/error.
+        """
+
         try:
-            transcript = transcript_list.find_transcript(['tr', 'en'])
-            return transcript
+            transcript_list = self.ytt_api.list_transcripts(video_id)
+
+        except (TranscriptsDisabled, NoTranscriptFound):
+            print("No transcripts found or disabled.")
+            return None
+        
+        except Exception as e:
+            print(f"Error while fetching list: {e}")
+            return None
+
+        return self.find_transcript_in_list(transcript_list)
+    
+    def find_transcript_in_list(self, transcript_list):
+        """Searches for a transcript in the provided list based on preferred languages.
+
+        Args:
+            transcript_list (TranscriptList): The list of transcripts returned by the API.
+
+        Returns:
+            Transcript | None: The matching transcript object, or None if no suitable match found.
+        """
+
+        #find manually created transcript
+        try:
+            return transcript_list.find_transcript(self.LANGUAGES)
         except NoTranscriptFound:
             pass
 
         #if no manually created transcripts, try to get generated ones
         try:
-            transcript = transcript_list.find_generated_transcript(['tr', 'en'])
-            return transcript       
+            return transcript_list.find_generated_transcript(self.LANGUAGES)    
         except NoTranscriptFound:
             print("No transcript available for this video.")
             return None
-    
-    except (TranscriptsDisabled, NoTranscriptFound):
-        print(f"Transcripts are disabled or not found for video ID: {video_id}")
-        return None
-    except Exception as e:
-        print(f"An error occurred while fetching the transcript: {e}")
-        return None
-    
+        
 def get_transcripted_text(youtube_url: str) -> str | None:
+    """Retrieves the full formatted text transcript from a YouTube URL.
+    This function handles ID extraction, fetching, and formatting.
+
+    Args:
+        youtube_url (str): The URL of the YouTube video.
+
+    Returns:
+        str | None: The formatted transcript text, or None if any step fails.
+    """
     video_id = get_video_id_from_youtube_url(youtube_url)
 
     if not video_id:
         print("Invalid YouTube URL provided.")
         return None
     
-    transcript_obj = fetch_transcript_from_youtube_url(video_id)
+    transcript_fetcher = TranscriptFetch()
+
+    transcript_obj = transcript_fetcher.get_transcript_obj(video_id)
 
     if not transcript_obj:
         return None
