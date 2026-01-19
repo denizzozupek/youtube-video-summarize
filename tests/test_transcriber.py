@@ -1,4 +1,5 @@
 import pytest
+import logging
 from unittest.mock import MagicMock
 from transcriber import get_video_id_from_youtube_url, get_transcripted_text, TranscriptFetch
 from youtube_transcript_api import TranscriptsDisabled, NoTranscriptFound
@@ -35,6 +36,10 @@ class TestFetchTranscript:
         fetcher_mock.mock_list = mock_list
         return fetcher_mock
     
+    @pytest.fixture(autouse=True)
+    def setup_logging(self, caplog):
+        caplog.set_level(logging.ERROR)
+    
     def test_get_manual_transcript_obj_success(self, fetcher):
         """Verifies that the manual transcript is retrieved if available."""
         fetcher.mock_list.find_transcript.return_value = "Manual Transcript Object"
@@ -53,16 +58,16 @@ class TestFetchTranscript:
         assert result == "Generated Transcript"
         fetcher.mock_list.find_generated_transcript.assert_called_with(['tr', 'en'])
     
-    def test_fetch_list_api_error(self, fetcher, capsys):
+    def test_fetch_list_api_error(self, fetcher, caplog):
         """Verifies proper error handling when transcripts are disabled or not found."""
         fetcher.mock_api.list_transcripts.side_effect = TranscriptsDisabled("Disabled")
         
         result = fetcher.get_transcript_obj("valid_video_id")
         
         assert result is None
-        assert "No transcripts found or disabled." in capsys.readouterr().out
-    
-    def test_neihter_transcript_found(self, fetcher, capsys):
+        assert "No transcripts found or disabled" in caplog.text
+  
+    def test_neihter_transcript_found(self, fetcher, caplog):
         """Verifies that none is returned when neither manual nor generated transcripts exist."""
         fetcher.mock_list.find_transcript.side_effect = NoTranscriptFound("id", [], "")
         fetcher.mock_list.find_generated_transcript.side_effect = NoTranscriptFound("id", [], "")
@@ -70,7 +75,7 @@ class TestFetchTranscript:
         result = fetcher.get_transcript_obj("valid_video_id")
         
         assert result is None
-        assert "No transcript available for this video." in capsys.readouterr().out
+        assert "No transcript available for this video" in caplog.text
 
 class TestGetTranscriptedText:
     """Integration style tests for the main get_transcripted_text function."""
@@ -103,11 +108,11 @@ class TestGetTranscriptedText:
         mock_fetcher_class.assert_called_once()
         mock_formatter_class.assert_called_once()
 
-    def test_fail_invalid_url(self, capsys):
+    def test_fail_invalid_url(self, caplog):
         """Verifies immediate exit when an invalid URL is provided."""
         result = get_transcripted_text("invalid_url")
         assert result is None
-        assert "Invalid YouTube URL provided" in capsys.readouterr().out
+        assert "Invalid YouTube URL provided" in caplog.text
 
 
         

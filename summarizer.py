@@ -1,10 +1,26 @@
 import os 
 import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, InvalidArgument
+from google.api_core.exceptions import ResourceExhausted, InvalidArgument, ServiceUnavailable, DeadlineExceeded
 from dotenv import load_dotenv
 from PROMPTS import system_prompt
+import logging
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+@retry(
+        stop=stop_after_attempt(3),
+        wait=wait_fixed(2),
+        retry = retry_if_exception_type(((ServiceUnavailable, DeadlineExceeded, ConnectionError)))
+
+)
+
+def generate_content_safe(model, prompt):
+    """Safely calls the api with retry logic for transient errors
+    """
+    return model.generate_content(prompt)
 
 def youtube_text_summarizer(youtube_video_text : str) -> str | None:
     """Extracts the video ID from a given YouTube URL.
@@ -27,21 +43,22 @@ def youtube_text_summarizer(youtube_video_text : str) -> str | None:
     model = genai.GenerativeModel("gemini-2.5-pro")
 
     user_prompt = f"Here is the video transcript:\n\n{youtube_video_text}"
+    full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
     try:
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
-        response = model.generate_content(full_prompt)
+        logger.info("Sending request to Google Gemini API...")
+        response = generate_content_safe(model, full_prompt)
+        logger.info("Summary generated successfully.")
         return response.text
     
     except InvalidArgument:
-        print("Error: The video transcript is too long for the model's context window (Token limit exceeded).")
+        logger.error("The video transcript is too long for the model's context window (Token limit exceeded).")
         return None
 
     except ResourceExhausted:
-        print("Error: API quota exceeded (Resource Exhausted). Please try again later.")
+        logger.error("API quota exceeded (Resource Exhausted). Please try again later.")
         return None
     
     except Exception as e:
-        print(f"An error occurred during the summarization process: {e}")
+        logger.error(f"An error occurred during the summarization process: {e}", exc_info=True)
         return None

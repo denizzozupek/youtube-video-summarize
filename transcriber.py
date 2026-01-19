@@ -1,7 +1,9 @@
-import traceback
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 from urllib.parse import urlparse, parse_qs
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_video_id_from_youtube_url(youtube_url: str) -> str | None:
     """Extracts the video ID from a given YouTube URL.
@@ -56,11 +58,11 @@ class TranscriptFetch:
             transcript_list = self.ytt_api.list_transcripts(video_id)
 
         except (TranscriptsDisabled, NoTranscriptFound):
-            print("No transcripts found or disabled.")
+            logger.error(f"No transcripts found or disabled:{video_id}")
             return None
         
         except Exception as e:
-            print(f"Error while fetching list: {e}")
+            logger.error(f"Error while fetching list: {e}", exc_info=True)
             return None
 
         return self.find_transcript_in_list(transcript_list)
@@ -85,7 +87,7 @@ class TranscriptFetch:
         try:
             return transcript_list.find_generated_transcript(self.LANGUAGES)    
         except NoTranscriptFound:
-            print("No transcript available for this video.")
+            logger.error("No transcript available for this video")
             return None
         
 def get_transcripted_text(youtube_url: str) -> str | None:
@@ -101,7 +103,7 @@ def get_transcripted_text(youtube_url: str) -> str | None:
     video_id = get_video_id_from_youtube_url(youtube_url)
 
     if not video_id:
-        print("Invalid YouTube URL provided.")
+        logger.error(f"Invalid YouTube URL provided: {youtube_url}")
         return None
     
     transcript_fetcher = TranscriptFetch()
@@ -113,12 +115,12 @@ def get_transcripted_text(youtube_url: str) -> str | None:
     
     # Format the transcript into plain text
     try:
-        print("Fetching and formatting transcript...")
+        logger.info("Fetching and formatting transcript...")
         transcripted_text = transcript_obj.fetch()
         
         formatter = TextFormatter()
         return formatter.format_transcript(transcripted_text)
     
     except Exception as e:
-        print(f"An error occurred while formatting the transcript: {e}")
+        logger.error(f"An error occurred while formatting the transcript: {e}", exc_info=True)
         return None

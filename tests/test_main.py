@@ -1,4 +1,5 @@
 import pytest
+import logging
 from unittest.mock import MagicMock
 from main import main
 import google.generativeai as genai
@@ -17,8 +18,11 @@ def mock_env(monkeypatch):
     return mock_model
 
 class TestSuccessScenarios:
+    @pytest.fixture(autouse=True)
+    def setup_logging(self, caplog):
+        caplog.set_level(logging.INFO)
     """Tests the happy paths where the program runs successfully."""
-    def test_success_scenario(self, monkeypatch, capsys, tmp_path):
+    def test_success_scenario(self, monkeypatch, capsys, tmp_path, caplog):
         """Tests the full flow: fetching, summarizing, and saving to a real temporary file."""
         
         test_url = "https://youtu.be/video123"
@@ -40,7 +44,7 @@ class TestSuccessScenarios:
         captured = capsys.readouterr()
 
         assert "This is an summary" in captured.out
-        assert "Summary saved to summary_id123.md" in captured.out
+        assert "Summary saved to summary_id123.md" in caplog.text
         
         saved_file = tmp_path / "summary_id123.md"
         assert saved_file.exists()
@@ -50,7 +54,7 @@ class TestSuccessScenarios:
         mock_summarize.assert_called_once_with("This is a transcripted text")
         mock_id.assert_called_once_with(test_url)
     
-    def test_success_with_timestamp_filename(self, monkeypatch, capsys, tmp_path):
+    def test_success_with_timestamp_filename(self, monkeypatch, caplog, tmp_path):
         """Ensures we use a timestamp for the filename if video ID extraction fails."""
         test_args = ["main.py", "https://youtu.be/video123", "--save"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -71,9 +75,9 @@ class TestSuccessScenarios:
 
         assert main() == 0
 
-        captured = capsys.readouterr()
+        
         expected_filename = "summary_20251226_120000.md"
-        assert f"Summary saved to {expected_filename}" in captured.out
+        assert f"Summary saved to {expected_filename}" in caplog.text
 
         saved_file = tmp_path / expected_filename
         assert saved_file.exists()
@@ -81,8 +85,11 @@ class TestSuccessScenarios:
     
 class TestFailureScenarios:
     """Tests various error conditions to ensure the program exits gracefully."""
+    @pytest.fixture(autouse=True)
+    def setup_logging(self, caplog):
+        caplog.set_level(logging.ERROR)
 
-    def test_no_api_key_failure(self, monkeypatch, capsys):
+    def test_no_api_key_failure(self, monkeypatch, caplog):
         """Checks if the program exits with error code 1 when API key is missing."""
         test_args = ["main.py", "https://youtu.be/video123"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -90,11 +97,9 @@ class TestFailureScenarios:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
         assert main() == 1
-
-        captured = capsys.readouterr()
-        assert "Error: GOOGLE_API_KEY not found" in captured.out
+        assert "GOOGLE_API_KEY not found" in caplog.text
     
-    def test_failed_because_transcript(self, monkeypatch, capsys):
+    def test_failed_because_transcript(self, monkeypatch, caplog):
         """Tests behavior when the transcript cannot be fetched."""
         test_args = ["main.py", "https://youtu.be/video123"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -105,12 +110,12 @@ class TestFailureScenarios:
         
         assert main() == 1
 
-        captured = capsys.readouterr()
-        assert "Error: Unable to fetch transcript for the provided video URL." in captured.out
+        
+        assert "Unable to fetch transcript for the provided video URL." in caplog.text
 
         mock_transcripted_text.assert_called_once_with("https://youtu.be/video123")
 
-    def test_failed_because_summary(self, monkeypatch, capsys):
+    def test_failed_because_summary(self, monkeypatch, caplog):
         """Test fail when the summarization step fails"""
         test_args = ["main.py", "https://youtu.be/video123"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -122,14 +127,13 @@ class TestFailureScenarios:
         monkeypatch.setattr("main.youtube_text_summarizer", mock_summarize)
 
         assert main() == 1
-
-        captured = capsys.readouterr()
-        assert "Error: Summarization failed." in captured.out
+        assert "Summarization failed." in caplog.text
 
         mock_text.assert_called_once()
         mock_summarize.assert_called_once()
     
-    def test_failed_because_keyboard_interrupt(self, monkeypatch, capsys):
+    def test_failed_because_keyboard_interrupt(self, monkeypatch, caplog):
+        caplog.set_level(logging.WARNING)
         """Clean exit if the user presses Ctrl+C."""
         test_args = ["main.py", "https://youtu.be/video123"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -138,11 +142,9 @@ class TestFailureScenarios:
         monkeypatch.setattr("main.get_transcripted_text", mock_interrupt)
        
         assert main() == 0
+        assert "Process interrupted by user. Exiting..." in caplog.text
 
-        captured = capsys.readouterr()
-        assert "Process interrupted by user. Exiting..." in captured.out
-
-    def test_failed_exception(self, monkeypatch, capsys):
+    def test_failed_exception(self, monkeypatch, caplog):
         """Checks if unexpected errors are caught and logged."""
         test_args = ["main.py", "https://youtu.be/video123"]
         monkeypatch.setattr(sys, "argv", test_args)
@@ -151,7 +153,4 @@ class TestFailureScenarios:
         monkeypatch.setattr("main.get_transcripted_text", mock_error)
 
         assert main() == 1
-
-        captured = capsys.readouterr()
-
-        assert "An unknown error occured" in captured.out
+        assert "An unknown error occured" in caplog.text

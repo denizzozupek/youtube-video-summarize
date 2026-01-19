@@ -1,11 +1,12 @@
-import pytest
+import logging
 from unittest.mock import MagicMock
 import main
 import sys
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi
 
-def test_end_to_end_flow(monkeypatch, tmp_path, capsys):
+def test_end_to_end_flow(monkeypatch, tmp_path, caplog, capsys):
+    caplog.set_level(logging.INFO)
+
     monkeypatch.setenv("GOOGLE_API_KEY", "test_api_key")
     mock_api_configure = MagicMock(return_value=None)
     monkeypatch.setattr(genai, "configure", mock_api_configure)
@@ -49,8 +50,8 @@ def test_end_to_end_flow(monkeypatch, tmp_path, capsys):
     assert exit_code == 0
 
     captured = capsys.readouterr()
-    assert "Transcript fetched successfully" in captured.out
-    assert "Summarizing transcript..." in captured.out
+    assert "Transcript fetched successfully" in caplog.text
+    assert "Summarizing transcript..." in caplog.text
     assert "This is a summarized text" in captured.out 
 
     saved_file = tmp_path / f"summary_{fake_video_id}.md"
