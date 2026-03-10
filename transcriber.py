@@ -2,6 +2,7 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 from youtube_transcript_api.formatters import TextFormatter
 from urllib.parse import urlparse, parse_qs
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class TranscriptFetch:
         """
         self.ytt_api = api or YouTubeTranscriptApi()
 
-    def get_transcript_obj(self, video_id: str) -> list | None:
+    async def get_transcript_obj(self, video_id: str) -> list | None:
         """Orchestrates the retrieval of a transcript object for a given video ID.
 
         Args:
@@ -55,7 +56,7 @@ class TranscriptFetch:
         """
 
         try:
-            transcript_list = self.ytt_api.list_transcripts(video_id)
+            transcript_list = await asyncio.to_thread(self.ytt_api.list, video_id)
 
         except (TranscriptsDisabled, NoTranscriptFound):
             logger.error(f"No transcripts found or disabled:{video_id}")
@@ -90,7 +91,7 @@ class TranscriptFetch:
             logger.error("No transcript available for this video")
             return None
         
-def get_transcripted_text(youtube_url: str) -> str | None:
+async def get_transcripted_text(youtube_url: str) -> str | None:
     """Retrieves the full formatted text transcript from a YouTube URL.
     This function handles ID extraction, fetching, and formatting.
 
@@ -108,7 +109,7 @@ def get_transcripted_text(youtube_url: str) -> str | None:
     
     transcript_fetcher = TranscriptFetch()
 
-    transcript_obj = transcript_fetcher.get_transcript_obj(video_id)
+    transcript_obj = await transcript_fetcher.get_transcript_obj(video_id)
 
     if not transcript_obj:
         return None
@@ -116,7 +117,7 @@ def get_transcripted_text(youtube_url: str) -> str | None:
     # Format the transcript into plain text
     try:
         logger.info("Fetching and formatting transcript...")
-        transcripted_text = transcript_obj.fetch()
+        transcripted_text = await asyncio.to_thread(transcript_obj.fetch)
         
         formatter = TextFormatter()
         return formatter.format_transcript(transcripted_text)

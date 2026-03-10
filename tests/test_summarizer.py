@@ -1,73 +1,88 @@
 import pytest
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import patch, AsyncMock
+import litellm.exceptions as exceptions
 from summarizer import youtube_text_summarizer
-import google.generativeai as genai
-from google.api_core.exceptions import InvalidArgument, ResourceExhausted
-
 
 class TestYoutubeTextSummarizer:
-    """Tests the interaction with the Google Gemini API."""
+    """Tests the interaction with the Universal API Gateway (LiteLLM)."""
 
-    @pytest.fixture
-    def mock_env(self, monkeypatch):
-        """Sets up a fake environment with a mock API key and Gemini model."""
-        monkeypatch.setenv("GOOGLE_API_KEY", "test_api_key")
-        mock_api_configure = MagicMock(return_value=None)
-        monkeypatch.setattr(genai, "configure", mock_api_configure)
-
-        mock_model = MagicMock()
-        mock_model.generate_content.return_value.text = "Özetlenmiş metin"
-
-        mock_model_configure = MagicMock(return_value=mock_model)
-        monkeypatch.setattr(genai, "GenerativeModel", mock_model_configure)
-        
-        return mock_model
-    
     @pytest.fixture(autouse=True)
     def setup_logging(self, caplog):
+        """Testler sırasında sadece ERROR (hata) loglarını yakalar."""
         caplog.set_level(logging.ERROR) 
 
-    def test_success(self , mock_env):
+    @pytest.mark.asyncio
+    @patch('summarizer.generate_content_safe', new_callable=AsyncMock)
+    async def test_success(self, mock_generate):
         """Checks if we get a summary back when everything goes right."""
-        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
-        summary = youtube_text_summarizer(transcript)
-        assert summary == "Özetlenmiş metin"
+        # Dublörümüze diyoruz ki: Çağrıldığında bu metni dön.
+        mock_generate.return_value = "Özetlenmiş metin"
 
-        mock_env.generate_content.assert_called_once()
+        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
+        summary = await youtube_text_summarizer(transcript)
         
-    def test_no_api_key(self, monkeypatch):
-        """Ensures the app crashes intentionally if the API key is missing."""
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
-        with pytest.raises(ValueError, match="GOOGLE_API_KEY not found."):
-            youtube_text_summarizer(transcript)
-    
-    def test_token_limit_exceeded(self, mock_env, caplog):
-        """Tests if we handle the 'text too long' error without crashing."""
-        mock_env.generate_content.side_effect = InvalidArgument("Token limit exceeded")
+        assert summary == "Özetlenmiş metin"
+        mock_generate.assert_called_once()
 
-        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
-        summary = youtube_text_summarizer(transcript)
+    @pytest.mark.asyncio
+    @patch('summarizer.generate_content_safe', new_callable=AsyncMock)
+    async def test_auth_error(self, mock_generate, caplog):
+        """Ensures the app handles missing/invalid API keys gracefully."""
+        # LiteLLM API anahtarı bulamazsa AuthenticationError fırlatır.
+        mock_generate.side_effect = exceptions.AuthenticationError(
+            message="API Key not found", 
+            llm_provider="openai", 
+            model="gpt-4o-mini"
+        )
+
+        transcript = "Bu bir test video transkriptidir."
+        summary = await youtube_text_summarizer(transcript)
+        
+        assert summary is None
+        assert "api key is missing or invalid" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    @patch('summarizer.generate_content_safe', new_callable=AsyncMock)
+    async def test_token_limit_exceeded(self, mock_generate, caplog):
+        """Tests if we handle the 'text too long' error without crashing."""
+        mock_generate.side_effect = exceptions.ContextWindowExceededError(
+            message="Token limit exceeded", 
+            llm_provider="openai", 
+            model="gpt-4o-mini"
+        )
+
+        transcript = "Bu bir test video transkriptidir."
+        summary = await youtube_text_summarizer(transcript)
+        
         assert summary is None
         assert "token limit exceeded" in caplog.text.lower()
 
-    def test_api_failure(self, mock_env, caplog):
-        """Checks handling of generic API errors."""
-        error_message = "Google API Error"
-        mock_env.generate_content.side_effect = Exception(error_message)
+    @pytest.mark.asyncio
+    @patch('summarizer.generate_content_safe', new_callable=AsyncMock)
+    async def test_rate_limit_error(self, mock_generate, caplog):
+        """Tests if we inform the user correctly when the API quota runs out."""
+        mock_generate.side_effect = exceptions.RateLimitError(
+            message="Quota exceeded", 
+            llm_provider="openai", 
+            model="gpt-4o-mini"
+        )
 
-        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
-        summary = youtube_text_summarizer(transcript)
+        transcript = "Bu bir test video transkriptidir."
+        summary = await youtube_text_summarizer(transcript)
+
+        assert summary is None
+        assert "api quota exceeded or rate limited" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    @patch('summarizer.generate_content_safe', new_callable=AsyncMock)
+    async def test_api_failure(self, mock_generate, caplog):
+        """Checks handling of generic API errors."""
+        error_message = "Generic API Error"
+        mock_generate.side_effect = Exception(error_message)
+
+        transcript = "Bu bir test video transkriptidir."
+        summary = await youtube_text_summarizer(transcript)
+        
         assert summary is None
         assert error_message in caplog.text
-    
-    def test_resource_exhausted(self, mock_env, caplog):
-        """Tests if we inform the user correctly when the API quota runs out."""
-        mock_env.generate_content.side_effect = ResourceExhausted("error_message")
-
-        transcript = "Bu bir test video transkriptidir. İçeriği özetlenecektir."
-        summary = youtube_text_summarizer(transcript)
-
-        assert summary is None
-        assert "API quota exceeded (Resource Exhausted)" in caplog.text

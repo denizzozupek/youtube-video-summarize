@@ -1,64 +1,63 @@
 import os 
-import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, InvalidArgument, ServiceUnavailable, DeadlineExceeded
+from litellm import acompletion
+import litellm
+import litellm.exceptions as exceptions
 from dotenv import load_dotenv
 from PROMPTS import system_prompt
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 import logging
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 load_dotenv()
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-5-nano")
 
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-@retry(
-        stop=stop_after_attempt(3),
-        wait=wait_fixed(2),
-        retry = retry_if_exception_type(((ServiceUnavailable, DeadlineExceeded, ConnectionError)))
-
-)
-
-def generate_content_safe(model, prompt):
-    """Safely calls the api with retry logic for transient errors
+@retry(stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+retry=retry_if_exception_type((exceptions.RateLimitError, exceptions.ServiceUnavailableError, exceptions.InternalServerError)))
+async def generate_content_safe(messages: list):
+    """Safely calls the api with retry logic for transient errors using LiteLLM's exceptions
     """
-    return model.generate_content(prompt)
+    logger.info("Sending request to the model...")
+    response = await acompletion(model=MODEL_NAME, messages=messages)
+    return response.choices[0].message.content
 
-def youtube_text_summarizer(youtube_video_text : str) -> str | None:
-    """Extracts the video ID from a given YouTube URL.
+async def youtube_text_summarizer(youtube_video_text : str) -> str | None:
+    """Generates a summary from the given YouTube video transcript using API.
 
     Args:
-        youtube_url (str): The URL of the YouTube video.
+        youtube_video_text (str): The transcript text of the YouTube video.
 
     Returns:
         str | None: The summary text if successful, or None if an error occurs.
         
-    Raises:
-        ValueError: If GOOGLE_API_KEY is not set in environment variables.
     """
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY not found in environment variables")
-    
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel("gemini-2.5-pro")
 
     user_prompt = f"Here is the video transcript:\n\n{youtube_video_text}"
-    full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
     try:
-        logger.info("Sending request to Google Gemini API...")
-        response = generate_content_safe(model, full_prompt)
+        summary_text = await generate_content_safe(messages)
         logger.info("Summary generated successfully.")
-        return response.text
-    
-    except InvalidArgument:
+        return summary_text
+
+    except litellm.exceptions.ContextWindowExceededError:
         logger.error("The video transcript is too long for the model's context window (Token limit exceeded).")
         return None
 
-    except ResourceExhausted:
-        logger.error("API quota exceeded (Resource Exhausted). Please try again later.")
+    except litellm.exceptions.RateLimitError:
+        logger.error("API quota exceeded or rate limited. Please try again later.")
+        return None
+    
+    except litellm.exceptions.AuthenticationError:
+        logger.error("Authentication Error: API Key is missing or invalid. Check your .env file!")
         return None
     
     except Exception as e:
-        logger.error(f"An error occurred during the summarization process: {e}", exc_info=True)
+        logger.error(f"An error occurred during the summarization process: {str(e)}")
         return None

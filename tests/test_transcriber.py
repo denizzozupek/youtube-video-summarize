@@ -1,6 +1,6 @@
 import pytest
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from transcriber import get_video_id_from_youtube_url, get_transcripted_text, TranscriptFetch
 from youtube_transcript_api import TranscriptsDisabled, NoTranscriptFound
 
@@ -27,7 +27,7 @@ class TestFetchTranscript:
         """
         mock_api = MagicMock()
         mock_list = MagicMock()
-        mock_api.list_transcripts.return_value = mock_list
+        mock_api.list.return_value = mock_list
 
         fetcher_mock = TranscriptFetch()
         fetcher_mock.ytt_api = mock_api
@@ -40,39 +40,43 @@ class TestFetchTranscript:
     def setup_logging(self, caplog):
         caplog.set_level(logging.ERROR)
     
-    def test_get_manual_transcript_obj_success(self, fetcher):
+    @pytest.mark.asyncio
+    async def test_get_manual_transcript_obj_success(self, fetcher):
         """Verifies that the manual transcript is retrieved if available."""
         fetcher.mock_list.find_transcript.return_value = "Manual Transcript Object"
         
-        result = fetcher.get_transcript_obj("valid_video_id")
+        result = await fetcher.get_transcript_obj("valid_video_id")
         assert result == "Manual Transcript Object"
         fetcher.mock_list.find_transcript.assert_called_with(['tr', 'en'])
 
-    def test_get_transcript_object_success_generated(self, fetcher):
+    @pytest.mark.asyncio
+    async def test_get_transcript_object_success_generated(self, fetcher):
         """hecks if the code falls back to auto-generated transcripts when manual ones are missing."""
         fetcher.mock_list.find_transcript.side_effect = NoTranscriptFound("id", [], "")
         fetcher.mock_list.find_generated_transcript.return_value = "Generated Transcript"
         
-        result = fetcher.get_transcript_obj("valid_video_id")
+        result = await fetcher.get_transcript_obj("valid_video_id")
         
         assert result == "Generated Transcript"
         fetcher.mock_list.find_generated_transcript.assert_called_with(['tr', 'en'])
     
-    def test_fetch_list_api_error(self, fetcher, caplog):
+    @pytest.mark.asyncio
+    async def test_fetch_list_api_error(self, fetcher, caplog):
         """Verifies proper error handling when transcripts are disabled or not found."""
-        fetcher.mock_api.list_transcripts.side_effect = TranscriptsDisabled("Disabled")
+        fetcher.mock_api.list.side_effect = TranscriptsDisabled("Disabled")
         
-        result = fetcher.get_transcript_obj("valid_video_id")
+        result = await fetcher.get_transcript_obj("valid_video_id")
         
         assert result is None
         assert "No transcripts found or disabled" in caplog.text
-  
-    def test_neihter_transcript_found(self, fetcher, caplog):
+    
+    @pytest.mark.asyncio
+    async def test_neihter_transcript_found(self, fetcher, caplog):
         """Verifies that none is returned when neither manual nor generated transcripts exist."""
         fetcher.mock_list.find_transcript.side_effect = NoTranscriptFound("id", [], "")
         fetcher.mock_list.find_generated_transcript.side_effect = NoTranscriptFound("id", [], "")
         
-        result = fetcher.get_transcript_obj("valid_video_id")
+        result = await fetcher.get_transcript_obj("valid_video_id")
         
         assert result is None
         assert "No transcript available for this video" in caplog.text
@@ -80,12 +84,13 @@ class TestFetchTranscript:
 class TestGetTranscriptedText:
     """Integration style tests for the main get_transcripted_text function."""
 
-    def test_success(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_success(self, monkeypatch):
         """Tests the successful flow: ID extraction -> fetch -> format."""
         mock_id = MagicMock(return_value="valid_video_id")
         monkeypatch.setattr("transcriber.get_video_id_from_youtube_url",mock_id)
         
-        mock_fetcher_instance = MagicMock()
+        mock_fetcher_instance = AsyncMock()
         mock_transcript_obj = MagicMock()
         
         mock_fetcher_instance.get_transcript_obj.return_value = mock_transcript_obj
@@ -100,7 +105,7 @@ class TestGetTranscriptedText:
         mock_formatter_class = MagicMock(return_value=mock_formatter)
         monkeypatch.setattr("transcriber.TextFormatter", mock_formatter_class)
         
-        result = get_transcripted_text("http://youtube.com/watch?v=valid_video_id")
+        result = await get_transcripted_text("http://youtube.com/watch?v=valid_video_id")
         
         assert result == "Test Metni"
 
@@ -108,9 +113,10 @@ class TestGetTranscriptedText:
         mock_fetcher_class.assert_called_once()
         mock_formatter_class.assert_called_once()
 
-    def test_fail_invalid_url(self, caplog):
+    @pytest.mark.asyncio
+    async def test_fail_invalid_url(self, caplog):
         """Verifies immediate exit when an invalid URL is provided."""
-        result = get_transcripted_text("invalid_url")
+        result = await get_transcripted_text("invalid_url")
         assert result is None
         assert "Invalid YouTube URL provided" in caplog.text
 
