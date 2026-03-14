@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/badge/fastapi-109989?style=for-the-badge&logo=FASTAPI&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
 </div>
 
 <br>
@@ -32,6 +33,42 @@ To solve this, I designed the system around an **Asynchronous Polling (Queue) Ar
 * **pytest & pytest-asyncio:** For robust unit testing with database isolation.
 
 ## 🚀 Setup & Installation
+
+The easiest way to run this project is using **Docker**, which handles all dependencies and environment setups automatically.
+
+### Option 1: Running with Docker (Recommended)
+
+**1. Clone the repository:**
+
+```bash
+git clone https://github.com/denizzozupek/youtube-video-summarize
+cd youtube-video-summarize
+
+```
+
+**2. Configure Environment:**
+
+Create a `.env` file in the root directory:
+
+```env
+OPENAI_API_KEY=your_key_here
+MODEL_NAME=openai/gpt-4o-mini
+
+```
+
+**3. Build and Run:**
+
+```bash
+docker build -t youtube-summarizer .
+docker run -p 8000:8000 --env-file .env youtube-summarizer
+
+```
+
+The API will be available at `http://localhost:8000/docs`.
+
+---
+
+### Option 2: Manual Installation (Development)
 
 Follow these steps to run the project locally.
 
