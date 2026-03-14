@@ -1,113 +1,130 @@
+# YouTube Video Summarizer API 🎥
 
-# 🎥 YouTube Video Summarizer 
+<div align="center">
+  <img src="https://img.shields.io/badge/Python-FFD43B?style=for-the-badge&logo=python&logoColor=blue" alt="Python" />
+  <img src="https://img.shields.io/badge/fastapi-109989?style=for-the-badge&logo=FASTAPI&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest" />
+</div>
 
-A powerful Python tool that analyzes YouTube videos to generate structured, educational summaries using **Google Gemini**.
+<br>
 
-This tool automatically retrieves video transcripts. If official captions are missing, it downloads the audio and transcribes it locally using **OpenAI Whisper** as a fallback. It then processes the text to extract key insights, learning points, and summaries.
+This project is an MVP (Minimum Viable Product) I developed to learn and practice **asynchronous programming (asyncio)**, background workers, and non-blocking API architectures in Python. 
 
-## 🚀 Key Features
+It provides an asynchronous REST API that takes a YouTube URL, extracts the video transcript, and summarizes it using AI (OpenAI, Gemini, etc.) via LiteLLM.
 
-* **Automatic Transcript Retrieval:** Fetches official YouTube captions (if available) in seconds.
-* **Smart Audio Fallback:** Automatically downloads audio and uses **OpenAI Whisper (Local)** for transcription if no captions are found.
-* **AI-Powered Summarization:** Uses Google's **Gemini 1.5 Flash** model for fast and context-aware summaries.
-* **Structured Output:** Generates clean Markdown reports including "Key Points," "Things to Learn," and "Conclusion."
-* **File Export:** Option to save the summary to a `.md` file for later use.
+## Why This Architecture? (Learning Outcomes)
 
-## 🛠️ Tech Stack
+AI models take time to generate responses (sometimes 30-40 seconds). If I had built a traditional, synchronous API, the client would be forced to wait for the entire process to finish, risking "Timeout" errors and blocking the server from handling other requests.
 
-* **Python 3.10+**
-* **Google Gemini API (1.5 Flash)** - For summarization.
-* **OpenAI Whisper** - For speech-to-text transcription.
-* **yt-dlp** - For audio downloading.
-* **YouTube Transcript API** - For fetching captions.
+To solve this, I designed the system around an **Asynchronous Polling (Queue) Architecture**:
+1. **The Receptionist (FastAPI):** Instantly accepts the URL, creates a database record with a "pending" status, and immediately returns a `{"status": "processing"}` response without blocking the main thread.
+2. **The Queue (`asyncio.Queue`):** The URL is placed into an in-memory queue.
+3. **The Worker (Background Task):** Running silently in the background, it picks up URLs from the queue, fetches transcripts, calls the LLM, and updates the database with the final summary.
+4. **The Database (`aiosqlite`):** All database operations are fully asynchronous to prevent I/O bottlenecks.
 
-## ⚙️ Installation
+## Technologies Used
 
-Follow these steps to set up the project locally.
+* **FastAPI:** Modern, fast web framework for building async APIs.
+* **asyncio & aiosqlite:** For background tasks and non-blocking database operations.
+* **LiteLLM:** A standardized interface to call various LLMs (OpenAI, Anthropic, Gemini) using the same format.
+* **YouTube Transcript API:** To extract subtitles/captions directly from YouTube videos.
+* **pytest & pytest-asyncio:** For robust unit testing with database isolation.
 
-### 1. Clone the Repository
+## 🚀 Setup & Installation
+
+Follow these steps to run the project locally.
+
+**1. Clone the repository:**
 ```bash
-git clone [https://github.com/denizzozupek/youtube-video-summarize.git](https://github.com/denizzozupek/youtube-video-summarize.git)
+git clone https://github.com/denizzozupek/youtube-video-summarize
 cd youtube-video-summarize
-````
 
-### 2\. Set Up Virtual Environment
-
-It is recommended to use a virtual environment.
-
-```bash
-# Windows
-python -m venv venv
-.\venv\Scripts\activate
-
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
 ```
 
-### 3\. Install Dependencies
+**2. Create and activate a virtual environment:**
+
+```bash
+python -m venv venv
+
+# On Windows:
+venv\Scripts\activate
+
+# On Mac/Linux:
+source venv/bin/activate
+
+```
+
+**3. Install dependencies:**
 
 ```bash
 pip install -r requirements.txt
+
 ```
 
-### 4\. Install FFmpeg (Crucial\!)
+**4. Set up environment variables:**
+Rename the `.env.example` file to `.env` in the root directory and add your API key:
 
-FFmpeg is required for processing audio files when captions are not available.
+```env
+OPENAI_API_KEY=sk-your-api-key-here
+MODEL_NAME=openai/gpt-4o-mini
 
-  * **Windows:** [Download FFmpeg](https://ffmpeg.org/download.html) and add it to your System PATH.
-  * **macOS:** `brew install ffmpeg`
-  * **Linux:** `sudo apt install ffmpeg`
-
-### 5\. Configure API Key
-
-Create a `.env` file in the root directory and add your Google AI Studio API key.
-
-```ini
-GOOGLE_API_KEY=AIzaSy... (Your actual key here)
 ```
 
-*(You can refer to `.env.example`)*
-
-##  Usage
-
-Run the tool via the command line:
-
-**Basic Usage:**
+**5. Start the application:**
 
 ```bash
-python main.py "[https://www.youtube.com/watch?v=VIDEO_ID](https://www.youtube.com/watch?v=VIDEO_ID)"
+uvicorn main:app --reload
+
 ```
 
-**Save Summary to File:**
+## How to Use the API (Polling Logic)
+
+Because the system is asynchronous, retrieving a summary is a two-step polling process:
+
+**System Responses:**
+
+* **First Request (Added to Queue):**
+  ```json
+  {
+      "message": "Video URL received and added to the processing queue."
+  }
+  ```
+
+
+
+* **If you ask again while processing:**
+```json
+{
+    "status": "processing", 
+    "message": "Video is currently being processed. Please check back later."
+}
+
+```
+
+
+* **When it's done (Summary Ready):**
+```json
+{
+    "summary": "The excellent AI-generated summary of the video will appear here..."
+}
+
+```
+
+##  Testing
+
+The project includes a test suite with database isolation to prevent state leakage between tests. To run the tests:
 
 ```bash
-python main.py "[https://www.youtube.com/watch?v=VIDEO_ID](https://www.youtube.com/watch?v=VIDEO_ID)" --save
+python -m pytest
+
 ```
 
-##  Example Output
+## Future Improvements (Roadmap)
 
-The tool generates a structured summary like this:
+Since this is a learning MVP, some architectural decisions were kept simple. Future iterations could include:
 
-```text
-# Video Title: The History of AI
-
-##  Summary
-This video explores the major milestones in Artificial Intelligence...
-
-##  Key Points
-* The invention of the perceptron in 1958.
-* The AI winter and funding cuts.
-* The rise of Deep Learning.
-
-##  Things to Learn / Notes
-* **Turing Test**: A test of a machine's ability to exhibit intelligent behavior.
-* **Neural Networks**: Algorithms modeled after the human brain.
-```
-
-##  Disclaimer
-
-This tool is for educational and personal use. Copyright of downloaded content belongs to the respective content creators.
-
----
+* Replacing `asyncio.Queue` with **Redis or RabbitMQ** to prevent data loss in case of server crashes.
+* Migrating from SQLite to **PostgreSQL** for a production-ready database.
+* Implementing multiple background workers to enable horizontal scaling.
 
